@@ -18,7 +18,7 @@ from telegram.ext import (
 from prisma import Prisma
 from prisma.models import WeatherIcon
 
-
+LOOP = asyncio.get_event_loop()
 load_dotenv()
 POLL_TIME = timedelta(minutes=10)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -93,8 +93,9 @@ async def day(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def close_poll_sleep(
     update: Update, context: ContextTypes.DEFAULT_TYPE, sleep_time
 ):
-    time.sleep(sleep_time)
-    await close_poll(update, context)
+    await asyncio.sleep(sleep_time)
+    if update.effective_chat.id in poll_created_dict:
+        await close_poll(update, context)
 
 
 async def start_poll(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -110,10 +111,10 @@ async def start_poll(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ["Kyllä/Yes", "Ei/No"],
         close_date=(datetime.now() + POLL_TIME),
     )
-    asyncio.create_task(
-        close_poll_sleep(update, context, int(POLL_TIME.total_seconds()) - 5)
-    )
     poll_created_dict[chat.id] = (created_poll.id, datetime.now())
+    asyncio.run_coroutine_threadsafe(
+        close_poll_sleep(update, context, int(POLL_TIME.total_seconds()) - 5), LOOP
+    )
 
 
 async def close_poll(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -199,7 +200,7 @@ async def fetch_from_db(code: str, temp_rounded: int):
     return db_res, datetime.now()
 
 
-if __name__ == "__main__":
+def main():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     start_handler = CommandHandler("start", start)
     day_handler = CommandHandler("paiva", day)
@@ -224,3 +225,7 @@ if __name__ == "__main__":
         ]
     )
     application.run_polling()
+
+
+if __name__ == "__main__":
+    main()
