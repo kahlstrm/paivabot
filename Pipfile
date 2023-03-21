@@ -7,6 +7,7 @@ name = "pypi"
 dev="watchfiles 'pipenv run python3 bot.py' ."
 db_push="prisma db push"
 generate="prisma generate"
+
 [packages]
 python-telegram-bot = ">=20.0a2"
 python-dotenv = "*"
@@ -16,6 +17,7 @@ prisma = "*"
 [dev-packages]
 watchfiles = "*"
 autopep8 = "*"
+black = "*"
 
 [requires]
-python_version = "3.10"
+python_version = "3.11"

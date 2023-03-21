@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM python:3.10-slim-buster as build
+FROM python:3.11-slim as build
 
 # Setup ENV variables here (if needed in the future)
 # Install pipenv
@@ -11,10 +11,9 @@ RUN PIPENV_VENV_IN_PROJECT=1 pipenv install --deploy
 WORKDIR /build
 COPY ./prisma/schema.prisma schema.prisma
 ENV PATH="/.venv/bin:$PATH"
-RUN prisma generate && \
-  mv /tmp/prisma/binaries/engines/efdf9b1183dddfd4258cd181a72125755215ab7b/* .
+RUN prisma generate
 # Install app into container
-FROM python:3.10-slim-buster as runtime
+FROM python:3.11-slim as runtime
 WORKDIR /bot
 COPY --from=build /.venv /.venv
 COPY --from=build /build /bot

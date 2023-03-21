@@ -5,14 +5,16 @@ datasource db {
 }
 
 generator db {
-  provider  = "prisma-client-py"
-  interface = "asyncio"
+  provider             = "prisma-client-py"
+  recursive_type_depth = -1
+  interface            = "asyncio"
 }
 
 model WeatherIcon {
-  code      Int
+  code        Int
   temperature Int
-  votes_yes    Int @default(1)
-  votes_no      Int  @default(1)
-  @@id([code,temperature])
+  votes_yes   Int @default(1)
+  votes_no    Int @default(1)
+
+  @@id([code, temperature])
 }
