@@ -6,7 +6,7 @@ Currently only works on x86 only because of Prisma binaries (tested on Linux)
 
 For development you need:
 - [pipenv](https://pipenv.pypa.io/en/latest/)
-- Python 3.10 is required in the Pipfile, highly recommended
+- Python 3.11 is required in the Pipfile, highly recommended
 - A free API key from [OpenWeatherMap](https://openweathermap.org/current)
 - A Postgres database (local/remote)
 - A TG bot API key
