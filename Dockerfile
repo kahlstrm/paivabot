@@ -1,25 +1,31 @@
-# syntax=docker/dockerfile:1
-FROM python:3.11-slim as build
+# Use a Python image with uv pre-installed
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
-# Setup ENV variables here (if needed in the future)
-# Install pipenv
-RUN pip3 install pipenv
-# Install python dependencies in /.venv
-COPY Pipfile .
-COPY Pipfile.lock .
-RUN PIPENV_VENV_IN_PROJECT=1 pipenv install --deploy
-# Install app into container
-FROM python:3.11-slim as runtime
-WORKDIR /bot
-COPY --from=build /.venv /.venv
-COPY --from=build root/.cache /home/botuser/.cache
-COPY . .
-ENV PATH="/.venv/bin:$PATH"
-# Create a non-root user and add permission to access /bot folder
-RUN useradd botuser && \
-  chown -R botuser /bot && chown -R botuser /home/botuser && chown -R botuser /.venv
-USER botuser
-RUN prisma generate && prisma py fetch
+# Install the project into `/app`
+WORKDIR /app
 
-# Run the app
-CMD ["python3", "bot.py" ]
+# Enable bytecode compilation
+ENV UV_COMPILE_BYTECODE=1
+
+# Copy from the cache instead of linking since it's a mounted volume
+ENV UV_LINK_MODE=copy
+
+# Install the project's dependencies using the lockfile and settings
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --frozen --no-install-project --no-dev
+
+# Then, add the rest of the project source code and install it
+# Installing separately from its dependencies allows optimal layer caching
+COPY pyproject.toml uv.lock bot.py /app
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
+
+# Place executables in the environment at the front of the path
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Reset the entrypoint, don't invoke `uv`
+ENTRYPOINT []
+
+CMD ["python3", "bot.py"]

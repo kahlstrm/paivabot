@@ -1,0 +1,11 @@
+[project]
+name = "paivabot"
+version = "0.1.0"
+description = "bot to tell weather + give an educated guess if the day is beautiful or not"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "libsql-client>=0.3.1",
+    "python-telegram-bot>=21.9",
+    "requests>=2.32.3",
+]

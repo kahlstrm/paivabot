@@ -1,11 +1,11 @@
+#!/usr/bin/env python
 from datetime import datetime, timedelta
 import os
-import time
 from typing import Tuple
 import asyncio
 import re
 import requests
-from dotenv import load_dotenv
+import libsql_client
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -15,17 +15,28 @@ from telegram.ext import (
     PollHandler,
     filters,
 )
-from prisma import Prisma
-from prisma.models import WeatherIcon
 
 LOOP = asyncio.get_event_loop()
-load_dotenv()
 POLL_TIME = timedelta(minutes=10)
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEATHER_API = os.getenv("WEATHER_API")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+WEATHER_API = os.getenv("WEATHER_API", "")
+DB_URL = os.getenv("DATABASE_URL", "http://127.0.0.1:8080")
+DB_TOKEN = os.getenv("DATABASE_TOKEN")
 if not BOT_TOKEN or not WEATHER_API:
     print("env variables missing")
-weather_code_dict: dict[str, Tuple[WeatherIcon, datetime]] = {}
+
+
+class WeatherStatus:
+    def __init__(
+        self, code: int, temperature: int, votes_yes: int, votes_no: int
+    ) -> None:
+        self.code = code
+        self.temperature = temperature
+        self.votes_yes = votes_yes
+        self.votes_no = votes_no
+
+
+weather_code_dict: dict[str, Tuple[WeatherStatus, datetime]] = {}
 poll_created_dict: dict[int, Tuple[int, datetime]] = {}
 
 word_filter = [
@@ -123,7 +134,8 @@ async def day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not res:
         res, timestamp = await add_data_to_db(code, temp_rounded, 1, 1)
     if not res:
-        await update.effective_chat.send_message(f"Error occurred, send help.")
+        await update.effective_chat.send_message("Error occurred, send help.")
+        return
     weather_code_dict[code] = (res, timestamp)
     beautiful_pct = res.votes_yes / (res.votes_no + res.votes_yes) * 100
     beautiness = "Kaunis" if beautiful_pct > 50 else "Ei kaunis"
@@ -192,55 +204,58 @@ async def handle_poll_ended(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_data_to_db(code: int, temp_rounded: int, yes_amount: int, no_amount: int):
-    db = Prisma()
-    try:
-        await db.connect()
-        res = await db.weathericon.find_first(
-            where={"code": code, "temperature": temp_rounded}
+    async with libsql_client.create_client(
+        url=DB_URL, auth_token=DB_TOKEN
+    ) as db_client:
+        try:
+            db_res = await db_client.execute(
+                "select code, temperature, votes_yes, votes_no from weather_status where code=? and temperature =?",
+                [code, temp_rounded],
+            )
+            if not db_res.rows:
+                db_res = await db_client.execute(
+                    "INSERT INTO weather_status(code,temperature,votes_yes,votes_no) VALUES(?,?,?,?) returning *",
+                    [code, temp_rounded, yes_amount, no_amount],
+                )
+            else:
+                db_res = await db_client.execute(
+                    "UPDATE weather_status SET votes_yes = votes_yes + ?, votes_no = votes_no + ? WHERE code =? AND temperature=? returning *",
+                    [yes_amount, no_amount, code, temp_rounded],
+                )
+        except Exception as e:
+            print(e)
+            return None, datetime.now() - timedelta(minutes=10)
+        row = db_res.rows[0]
+        res = WeatherStatus(
+            int(row["code"]),
+            int(row["temperature"]),
+            int(row["votes_yes"]),
+            int(row["votes_no"]),
         )
-        if not res:
-            res = await db.weathericon.create(
-                data={
-                    "code": code,
-                    "temperature": temp_rounded,
-                    "votes_yes": yes_amount,
-                    "votes_no": no_amount,
-                }
-            )
-        else:
-            await db.weathericon.update_many(
-                where={
-                    "code": code,
-                    "temperature": temp_rounded,
-                },
-                data={
-                    "votes_yes": {"increment": yes_amount},
-                    "votes_no": {"increment": no_amount},
-                },
-            )
-    except Exception as e:
-        print(e)
-        return None, datetime.now() - timedelta(minutes=10)
-    finally:
-        await db.disconnect()
-    return res, datetime.now()
+        return res, datetime.now()
 
 
 async def fetch_from_db(code: str, temp_rounded: int):
-    db = Prisma()
-    try:
-        await db.connect()
-        db_res = await db.weathericon.find_first(
-            where={"code": code, "temperature": temp_rounded}
+    async with libsql_client.create_client(
+        url=DB_URL, auth_token=DB_TOKEN
+    ) as db_client:
+        db_res = await db_client.execute(
+            "select code, temperature, votes_yes, votes_no from weather_status where code=? and temperature=?",
+            [code, temp_rounded],
         )
-        if not db_res:
-            db_res = await db.weathericon.create(
-                {"code": code, "temperature": temp_rounded}
+        if not db_res.rows:
+            db_res = await db_client.execute(
+                "INSERT INTO weather_status(code,temperature,votes_yes,votes_no) VALUES(?,?,1,1) returning *",
+                [code, temp_rounded],
             )
-    finally:
-        if db.is_connected():
-            await db.disconnect()
-    return db_res, datetime.now()
+        row = db_res[0]
+        res = WeatherStatus(
+            int(row["code"]),
+            int(row["temperature"]),
+            int(row["votes_yes"]),
+            int(row["votes_no"]),
+        )
+        return res, datetime.now()
 
 
 def main():
